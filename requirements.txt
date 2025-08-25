@@ -34,9 +34,13 @@ python-dotenv
 psycopg2-binary
 
 # API
-fastapi==0.108.0
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+opencv-python==4.10.0.84
+numpy==2.1.1
+
 pytz
-uvicorn
+
 # tests
 httpx<0.28
 pytest-asyncio
