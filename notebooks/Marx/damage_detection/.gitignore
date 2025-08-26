@@ -1,0 +1,14 @@
+# Environment
+.env
+.venv/
+__pycache__/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# YOLO training outputs
+runs/
+*.pt
+
+# Roboflow dataset
+road-damage-1/
