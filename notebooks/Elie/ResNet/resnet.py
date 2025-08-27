@@ -94,19 +94,29 @@ model = DoubleHeadResNet(
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-# Training loop (one epoch here)
-model.train()
-for images, (main_labels, sub_labels) in dataloader:
-    images = images.to(device)
-    main_labels = main_labels.to(device)
-    sub_labels = sub_labels.to(device)
+# ---------------- Training Loop ----------------
+epochs = 2  # number of epochs you want
 
-    optimizer.zero_grad()
-    main_out, sub_out = model(images)       # forward pass
-    # total loss = type loss + quality loss
-    loss = criterion(main_out, main_labels) + criterion(sub_out, sub_labels)
-    loss.backward()                         # backprop
-    optimizer.step()                        # update weights
+for epoch in range(epochs):
+    model.train()  # make sure model is in training mode
+    running_loss = 0.0
+
+    for images, (main_labels, sub_labels) in dataloader:
+        images = images.to(device)
+        main_labels = main_labels.to(device)
+        sub_labels = sub_labels.to(device)
+
+        optimizer.zero_grad()
+        main_out, sub_out = model(images)       # forward pass
+        # total loss = type loss + quality loss
+        loss = criterion(main_out, main_labels) + criterion(sub_out, sub_labels)
+        loss.backward()                         # backprop
+        optimizer.step()                        # update weights
+
+        running_loss += loss.item()
+
+    # print average loss for this epoch
+    print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader):.4f}")
 
 # Function to predict surface type and quality from an image
 def predict_image(img_path, model, transform, device):
