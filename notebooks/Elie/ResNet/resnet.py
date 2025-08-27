@@ -97,8 +97,10 @@ optimizer = optim.Adam(model.parameters(), lr=1e-4)
 # ---------------- Training Loop ----------------
 epochs = 2  # number of epochs you want
 
+best_val_acc = 0.0
+
 for epoch in range(epochs):
-    model.train()  # make sure model is in training mode
+    model.train()
     running_loss = 0.0
 
     for images, (main_labels, sub_labels) in dataloader:
@@ -107,16 +109,25 @@ for epoch in range(epochs):
         sub_labels = sub_labels.to(device)
 
         optimizer.zero_grad()
-        main_out, sub_out = model(images)       # forward pass
-        # total loss = type loss + quality loss
+        main_out, sub_out = model(images)
         loss = criterion(main_out, main_labels) + criterion(sub_out, sub_labels)
-        loss.backward()                         # backprop
-        optimizer.step()                        # update weights
+        loss.backward()
+        optimizer.step()
 
         running_loss += loss.item()
 
-    # print average loss for this epoch
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {running_loss/len(dataloader):.4f}")
+    avg_loss = running_loss / len(dataloader)
+    print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+
+    # Evaluate on validation set
+    val_acc_type, val_acc_quality = evaluate(model, val_loader, device)
+    val_acc = (val_acc_type + val_acc_quality)/2  # simple average
+
+    # Save model if validation improves
+    if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        torch.save(model.state_dict(), "best_model.pth")
+        print(f"  -> New best model saved with val acc: {best_val_acc:.2%}")
 
 # Function to predict surface type and quality from an image
 def predict_image(img_path, model, transform, device):
