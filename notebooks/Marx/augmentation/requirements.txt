@@ -3,3 +3,6 @@ torchvision
 numpy<2
 albumentations==1.4.7
 opencv-python==4.10.0.84
+pandas
+scikit-learn
+tqdm
