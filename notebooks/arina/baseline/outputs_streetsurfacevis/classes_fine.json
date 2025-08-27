@@ -1,0 +1,20 @@
+{
+  "0": "asphalt/bad",
+  "1": "asphalt/excellent",
+  "2": "asphalt/good",
+  "3": "asphalt/intermediate",
+  "4": "concrete/bad",
+  "5": "concrete/excellent",
+  "6": "concrete/good",
+  "7": "concrete/intermediate",
+  "8": "paving_stones/bad",
+  "9": "paving_stones/excellent",
+  "10": "paving_stones/good",
+  "11": "paving_stones/intermediate",
+  "12": "sett/bad",
+  "13": "sett/good",
+  "14": "sett/intermediate",
+  "15": "unpaved/bad",
+  "16": "unpaved/intermediate",
+  "17": "unpaved/very_bad"
+}
