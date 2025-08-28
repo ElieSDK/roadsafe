@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# dataset + generated
+notebooks/Marx/augmentation/s_1024/
+notebooks/Marx/augmentation/aug_preview/
+
+# python cache
+__pycache__/
+*.pyc
