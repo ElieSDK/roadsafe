@@ -148,7 +148,7 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
         return False, str(e)
 
 # ---------------- File Upload & Prediction ----------------
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg"])
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 if uploaded_file is not None:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
