@@ -14,13 +14,14 @@ from geopy.geocoders import Nominatim
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
+from huggingface_hub import hf_hub_download
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 MODEL_PATHS = {
-    "ResNet50": "best_model.pth",
-    "EfficientNet-B7": "efficientnet_fp16.pt.gz"
+    "ResNet50": "esdk/my-efficientnet-model/resnet.pth",
+    "EfficientNet-B7": "esdk/my-efficientnet-model/efficientnet_fp16.pt.gz"
 }
 DEFAULT_MODEL = "EfficientNet-B7"
 
@@ -77,12 +78,15 @@ class MultiHeadEffNetB7(nn.Module):
 def load_model(model_choice):
     if model_choice == "ResNet50":
         model = MultiHeadResNet50().to(device)
-        state_dict = torch.load(MODEL_PATHS[model_choice], map_location=device)
+        # Download from Hugging Face
+        local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="resnet.pth")
+        state_dict = torch.load(local_path, map_location=device)
         model.load_state_dict(state_dict, strict=False)
     else:
         model = MultiHeadEffNetB7().to(device)
-        # Load gzipped FP16 model
-        with gzip.open(MODEL_PATHS[model_choice], "rb") as f:
+        # Download and load gzipped FP16 model from Hugging Face
+        local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="efficientnet_fp16.pt.gz")
+        with gzip.open(local_path, "rb") as f:
             buffer = io.BytesIO(f.read())
             state_dict = torch.load(buffer, map_location=device)
         fixed_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
