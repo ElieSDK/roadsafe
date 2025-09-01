@@ -15,6 +15,13 @@ import smtplib
 from email.message import EmailMessage
 from datetime import datetime
 from huggingface_hub import hf_hub_download
+from dotenv import load_dotenv
+import os
+
+# ---------------- Load environment variables ----------------
+load_dotenv()
+GMAIL_USER = os.getenv("GMAIL_USER")
+GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,23 +83,25 @@ class MultiHeadEffNetB7(nn.Module):
 # ---------------- Model Loader ----------------
 @st.cache_resource
 def load_model(model_choice):
-    if model_choice == "ResNet50":
-        model = MultiHeadResNet50().to(device)
-        # Download from Hugging Face
-        local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="resnet.pth")
-        state_dict = torch.load(local_path, map_location=device)
-        model.load_state_dict(state_dict, strict=False)
-    else:
-        model = MultiHeadEffNetB7().to(device)
-        # Download and load gzipped FP16 model from Hugging Face
-        local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="efficientnet_fp16.pt.gz")
-        with gzip.open(local_path, "rb") as f:
-            buffer = io.BytesIO(f.read())
-            state_dict = torch.load(buffer, map_location=device)
-        fixed_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
-        model.load_state_dict(fixed_state_dict)
-    model.eval()
-    return model
+    try:
+        if model_choice == "ResNet50":
+            model = MultiHeadResNet50().to(device)
+            local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="resnet.pth")
+            state_dict = torch.load(local_path, map_location=device)
+            model.load_state_dict(state_dict, strict=False)
+        else:
+            model = MultiHeadEffNetB7().to(device)
+            local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="efficientnet_fp16.pt.gz")
+            with gzip.open(local_path, "rb") as f:
+                buffer = io.BytesIO(f.read())
+                state_dict = torch.load(buffer, map_location=device)
+            fixed_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+            model.load_state_dict(fixed_state_dict)
+        model.eval()
+        return model
+    except Exception as e:
+        st.error(f"Failed to load model: {e}")
+        return None
 
 # ---------------- Transform ----------------
 def get_transform(model_choice):
@@ -135,10 +144,10 @@ def get_image_timestamp(file_bytes):
 
 # ---------------- Email ----------------
 def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="image.jpg"):
-    gmail_user = "lelo108pro@gmail.com"
-    gmail_password = "ojemrykktyzdqrjv"
+    if not GMAIL_USER or not GMAIL_PASSWORD:
+        return False, "Email credentials not found. Set them in the .env file."
     msg = EmailMessage()
-    msg["From"] = gmail_user
+    msg["From"] = GMAIL_USER
     msg["To"] = to_email
     msg["Subject"] = subject
     msg.set_content(body, charset="utf-8")
@@ -151,7 +160,7 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
         )
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(gmail_user, gmail_password)
+            server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.send_message(msg)
         return True, "Email sent successfully"
     except Exception as e:
@@ -160,17 +169,21 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
+# Model selection
 model_choice = st.selectbox("Choose Model:", list(MODEL_PATHS.keys()), index=list(MODEL_PATHS.keys()).index(DEFAULT_MODEL))
-model = load_model(model_choice)
-transform = get_transform(model_choice)
+
+# Load model immediately
+with st.spinner("Loading model, please wait..."):
+    model = load_model(model_choice)
+    transform = get_transform(model_choice)
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-if uploaded_file:
+if uploaded_file and model:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", width="stretch")
+    st.image(image, caption="Uploaded Image", width=400)
 
     # Prediction
     img_tensor = transform(image).unsqueeze(0).to(device)
@@ -192,28 +205,25 @@ if uploaded_file:
 
     # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
+    lat, lon = coords if coords else (None, None)
     if coords:
-        lat, lon = coords
         st.success(f"GPS metadata found: {lat}, {lon}")
     else:
-        lat, lon = None, None
         st.info("No GPS metadata found. Please select location on the map.")
 
-    street_name, city_name = None, None
-
-    # Map (always shown, even if no GPS metadata)
+    # Map
     map_center = [lat, lon] if lat and lon else [35.68, 139.76]
     m = folium.Map(location=map_center, zoom_start=16)
     if lat and lon:
         folium.Marker([lat, lon], tooltip="Detected Location").add_to(m)
     map_data = st_folium(m, width=700, height=500)
 
-    # If user clicks map, override lat/lon
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
         st.success(f"Location selected: {lat}, {lon}")
 
     # Reverse geocoding
+    street_name, city_name = None, None
     if lat and lon:
         try:
             geolocator = Nominatim(user_agent="street_app")
@@ -229,7 +239,7 @@ if uploaded_file:
         except:
             street_name, city_name = None, None
 
-    # Lookup ward email from CSV
+    # Lookup ward email
     to_email = "recipient@example.com"
     if city_name:
         match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
