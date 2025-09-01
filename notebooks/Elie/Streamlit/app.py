@@ -28,6 +28,18 @@ SURFACE_TYPE_MAP_INV = {v: k for k, v in SURFACE_TYPE_MAP.items()}
 SURFACE_QUALITY_MAP = {"excellent": 0, "good": 1, "intermediate": 2, "bad": 3, "very_bad": 4}
 SURFACE_QUALITY_MAP_INV = {v: k for k, v in SURFACE_QUALITY_MAP.items()}
 
+# ---------------- Load CSV ----------------
+@st.cache_data
+def load_emails():
+    try:
+        df = pd.read_csv("csv.csv")
+        return df
+    except Exception as e:
+        st.error(f"Could not read csv.csv: {e}")
+        return pd.DataFrame(columns=["city", "email"])
+
+EMAIL_DF = load_emails()
+
 # ---------------- Multi-head Models ----------------
 class MultiHeadResNet50(nn.Module):
     def __init__(self, num_types=len(SURFACE_TYPE_MAP), num_qual=len(SURFACE_QUALITY_MAP)):
@@ -150,7 +162,7 @@ if uploaded_file:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", width="stretch")
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     # Prediction
     img_tensor = transform(image).unsqueeze(0).to(device)
@@ -176,43 +188,60 @@ if uploaded_file:
         lat, lon = coords
         st.success(f"GPS metadata found: {lat}, {lon}")
     else:
-        lat, lon = 35.63, 139.71
+        lat, lon = None, None
         st.info("No GPS metadata found. Please select location on the map.")
 
-    # Street name
-    street_name = None
-    try:
-        geolocator = Nominatim(user_agent="street_app")
-        location = geolocator.reverse((lat, lon), language='en')
-        street_name = location.raw.get("address", {}).get("road")
-        if street_name:
-            st.info(f"Street detected: {street_name}")
-    except:
-        street_name = None
+    street_name, city_name = None, None
 
-    # Map
-    m = folium.Map(location=[lat, lon], zoom_start=16)
-    marker = folium.Marker([lat, lon], tooltip="Selected Location")
-    marker.add_to(m)
+    # Map (always shown, even if no GPS metadata)
+    map_center = [lat, lon] if lat and lon else [35.68, 139.76]  # default center = Tokyo
+    m = folium.Map(location=map_center, zoom_start=16)
+    if lat and lon:
+        folium.Marker([lat, lon], tooltip="Detected Location").add_to(m)
     map_data = st_folium(m, width=700, height=500)
 
+    # If user clicks map, override lat/lon
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
         st.success(f"Location selected: {lat}, {lon}")
 
+    # Reverse geocoding only if coords exist
+    if lat and lon:
+        try:
+            geolocator = Nominatim(user_agent="street_app")
+            location = geolocator.reverse((lat, lon), language='en')
+            if location:
+                addr = location.raw.get("address", {})
+                street_name = addr.get("road")
+                city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
+                if street_name:
+                    st.info(f"Street detected: {street_name}")
+                if city_name:
+                    st.info(f"City detected: {city_name}")
+        except:
+            street_name, city_name = None, None
+
+    # Lookup ward email from CSV
+    to_email = "recipient@example.com"
+    if city_name:
+        match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
+        if not match.empty:
+            to_email = match.iloc[0]["email"]
+            st.success(f"Sending report to: {to_email}")
+
     # Send report
     if st.button("Send Report via Email"):
-        to_email = "recipient@example.com"
         subject = "Street Surface Report"
         body = f"""Street Surface Report
 Surface Type: {main_pred}
 Surface Quality: {sub_pred}
 Street Name: {street_name if street_name else 'Unknown'}
-GPS: {lat}, {lon}
+City: {city_name if city_name else 'Unknown'}
+GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
 Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
 Upload time: {upload_timestamp}
 """
-        success, info = send_email(to_email, subject, body, uploaded_file.read(), "street_image.jpg")
+        success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
         if success:
             st.success("Report sent successfully!")
         else:
