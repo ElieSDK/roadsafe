@@ -2,8 +2,10 @@ import streamlit as st
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
+from torchvision.models import efficientnet_b7, EfficientNet_B7_Weights
 from PIL import Image
 import io
+import gzip
 import piexif
 import pandas as pd
 import folium
@@ -18,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 MODEL_PATHS = {
     "ResNet50": "best_model.pth",
-    "EfficientNet-B7": "efficientnet.pt"
+    "EfficientNet-B7": "efficientnet_fp16.pt.gz"
 }
 DEFAULT_MODEL = "EfficientNet-B7"
 
@@ -27,6 +29,8 @@ SURFACE_TYPE_MAP_INV = {v: k for k, v in SURFACE_TYPE_MAP.items()}
 
 SURFACE_QUALITY_MAP = {"excellent": 0, "good": 1, "intermediate": 2, "bad": 3, "very_bad": 4}
 SURFACE_QUALITY_MAP_INV = {v: k for k, v in SURFACE_QUALITY_MAP.items()}
+
+NUM_MATERIALS, NUM_QUALITIES = 5, 5
 
 # ---------------- Load CSV ----------------
 @st.cache_data
@@ -55,9 +59,6 @@ class MultiHeadResNet50(nn.Module):
         features = self.backbone(x)
         return self.fc_type(features), self.fc_qual(features)
 
-from torchvision.models import efficientnet_b7, EfficientNet_B7_Weights
-NUM_MATERIALS, NUM_QUALITIES = 5, 5
-
 class MultiHeadEffNetB7(nn.Module):
     def __init__(self):
         super().__init__()
@@ -80,7 +81,10 @@ def load_model(model_choice):
         model.load_state_dict(state_dict, strict=False)
     else:
         model = MultiHeadEffNetB7().to(device)
-        state_dict = torch.load(MODEL_PATHS[model_choice], map_location=device)
+        # Load gzipped FP16 model
+        with gzip.open(MODEL_PATHS[model_choice], "rb") as f:
+            buffer = io.BytesIO(f.read())
+            state_dict = torch.load(buffer, map_location=device)
         fixed_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
         model.load_state_dict(fixed_state_dict)
     model.eval()
@@ -194,7 +198,7 @@ if uploaded_file:
     street_name, city_name = None, None
 
     # Map (always shown, even if no GPS metadata)
-    map_center = [lat, lon] if lat and lon else [35.68, 139.76]  # default center = Tokyo
+    map_center = [lat, lon] if lat and lon else [35.68, 139.76]
     m = folium.Map(location=map_center, zoom_start=16)
     if lat and lon:
         folium.Marker([lat, lon], tooltip="Detected Location").add_to(m)
@@ -205,7 +209,7 @@ if uploaded_file:
         lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
         st.success(f"Location selected: {lat}, {lon}")
 
-    # Reverse geocoding only if coords exist
+    # Reverse geocoding
     if lat and lon:
         try:
             geolocator = Nominatim(user_agent="street_app")
