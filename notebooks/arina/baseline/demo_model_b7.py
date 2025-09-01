@@ -124,9 +124,9 @@ train_sampler = ImbalancedDatasetSampler(
 
 
 train_dl = DataLoader(tr_ds, batch_size=BATCH_SIZE, sampler=train_sampler,
-                      num_workers=2, pin_memory=True, persistent_workers=True)
+                      num_workers=0, pin_memory=True, persistent_workers=False)
 val_dl   = DataLoader(va_ds, batch_size=BATCH_SIZE, shuffle=False,
-                      num_workers=2, pin_memory=True, persistent_workers=True)
+                      num_workers=0, pin_memory=True, persistent_workers=False)
 
 # ======== Model ========
 class MultiHeadEffNetB7(nn.Module):
@@ -225,7 +225,100 @@ for epoch in range(1, EPOCHS + 1):
         print(f"⏹️  Early stopping: no accuracy improvement for {PATIENCE} epochs.")
         break
 
-vc
+# Find the last saved checkpoint
+checkpoint_files = [f for f in os.listdir('.') if f.startswith('ckpt_epoch') and f.endswith('.pt')]
+if not checkpoint_files:
+    print("No checkpoints found to resume training.")
+else:
+    # Sort by epoch number to get the latest
+    latest_checkpoint = sorted(checkpoint_files, key=lambda x: int(x.split('ckpt_epoch')[1].split('.pt')[0]))[-1]
+    print(f"Resuming from checkpoint: {latest_checkpoint}")
+
+    # Load the model state
+    model.load_state_dict(torch.load(latest_checkpoint))
+
+    # Determine the starting epoch
+    start_epoch = int(latest_checkpoint.split('ckpt_epoch')[1].split('.pt')[0]) + 1
+
+    # Resume training loop
+    best_metric, wait = -1.0, 0 # Reset or load from a saved state if you were saving these
+    # If you saved best_metric and wait along with the checkpoint, load them here.
+    # For simplicity, we'll reset them here.
+
+    for epoch in range(start_epoch, EPOCHS + 1):
+        # ---- Train ----
+        model.train(); train_loss = 0.0
+        for imgs, (mat_y, qual_y) in train_dl:
+            imgs = imgs.to(device, non_blocking=True)
+            mat_y, qual_y = mat_y.to(device, non_blocking=True), qual_y.to(device, non_blocking=True)
+            with autocast(device_type=device.type): # Pass device type to autocast
+                m_logits, q_logits = model(imgs)
+                loss = lossfn(m_logits, mat_y) + lossfn(q_logits, qual_y)
+            opt.zero_grad(set_to_none=True)
+            scaler.scale(loss).backward(); scaler.step(opt); scaler.update()
+            train_loss += loss.item()
+
+        # ---- Validate ----
+        model.eval(); val_loss = 0.0; mat_ok = qual_ok = n = 0
+        with torch.no_grad():
+            for imgs, (mat_y, qual_y) in val_dl:
+                imgs = imgs.to(device, non_blocking=True)
+                mat_y, qual_y = mat_y.to(device, non_blocking=True), qual_y.to(device, non_blocking=True)
+                with autocast(device_type=device.type): # Pass device type to autocast
+                    m_logits, q_logits = model(imgs)
+                    vloss = lossfn(m_logits, mat_y) + lossfn(q_logits, qual_y)
+                val_loss += vloss.item()
+                mat_ok += (m_logits.argmax(1) == mat_y).sum().item()
+                qual_ok += (q_logits.argmax(1) == qual_y).sum().item()
+                n += mat_y.size(0)
+
+        mat_acc, qual_acc = (mat_ok/n if n else 0.0), (qual_ok/n if n else 0.0)
+        metric = 0.5 * (mat_acc + qual_acc)
+        # epoch_metrics.append(metric) # Uncomment if you want to continue tracking metrics
+
+        scheduler.step(metric)
+
+        # ---- Save checkpoints & early stop ----
+        torch.save(model.state_dict(), f"ckpt_epoch{epoch}.pt")
+        if metric > best_metric:
+            best_metric, wait = metric, 0
+            torch.save(model.state_dict(), "best_model.pt")
+            flag = " ✅ best updated"
+        else:
+            wait += 1; flag = ""
+
+        print(f"Epoch {epoch:02d}/{EPOCHS} | train_loss={train_loss:.3f}  val_loss={val_loss:.3f}  "
+              f"mat_acc={mat_acc:.3f}  qual_acc={qual_acc:.3f}  avg_acc={metric:.3f}  "
+              f"lr={opt.param_groups[0]['lr']:.2e}{flag}")
+
+        if wait >= PATIENCE:
+            print(f"⏹️  Early stopping: no accuracy improvement for {PATIENCE} epochs.")
+            break
+
+import os
+import shutil
+
+# Define the source file path (the model checkpoint in the current directory)
+source_file = "best_model.pt"
+
+# Define the destination directory in your Google Drive
+# Make sure this directory exists in your Drive, or create it if necessary
+destination_dir = "/content/drive/MyDrive/saved_models/"
+
+# Create the destination directory if it doesn't exist
+os.makedirs(destination_dir, exist_ok=True)
+
+# Define the full destination path for the file
+destination_file = os.path.join(destination_dir, os.path.basename(source_file))
+
+# Copy the file from the source to the destination
+try:
+    shutil.copy(source_file, destination_file)
+    print(f"Successfully copied {source_file} to {destination_file}")
+except FileNotFoundError:
+    print(f"Error: Source file '{source_file}' not found.")
+except Exception as e:
+    print(f"An error occurred while copying the file: {e}")
 
 # ======== Final Evaluation: Confusion Matrices (val set) ========
 cm_mat  = torch.zeros(NUM_MATERIALS, NUM_MATERIALS, dtype=torch.int64)  # [true, pred]
@@ -281,3 +374,17 @@ plt.ylabel('Average Accuracy')
 plt.grid(True)
 plt.xticks(epochs) # Ensure all epochs are shown on the x-axis
 plt.show()
+
+import os
+import datetime
+
+file_path = "/content/best_model.pt"
+try:
+    # Get the creation time (ctime) of the file
+    ctime_timestamp = os.path.getctime(file_path)
+    ctime_datetime = datetime.datetime.fromtimestamp(ctime_timestamp)
+    print(f"The file '{file_path}' was created on: {ctime_datetime}")
+except FileNotFoundError:
+    print(f"Error: The file '{file_path}' was not found.")
+except Exception as e:
+    print(f"An error occurred: {e}")
