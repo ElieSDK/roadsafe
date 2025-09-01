@@ -44,7 +44,9 @@ NUM_MATERIALS, NUM_QUALITIES = 5, 5
 @st.cache_data
 def load_emails():
     try:
-        df = pd.read_csv("csv.csv")
+        import os
+        csv_path = os.path.join(os.path.dirname(__file__), "csv.csv")
+        df = pd.read_csv(csv_path)
         return df
     except Exception as e:
         st.error(f"Could not read csv.csv: {e}")
