@@ -11,3 +11,4 @@ matplotlib
 seaborn
 huggingface_hub
 piexif
+python-dotenv
