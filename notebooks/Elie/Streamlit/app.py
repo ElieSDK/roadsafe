@@ -142,14 +142,14 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
     except Exception as e:
         return False, str(e)
 
-# ---------------- Session state initialization ----------------
+# ---------------- Streamlit UI ----------------
+st.title("Street Surface Classification & GPS")
+
+# Initialize session state
 if "marker" not in st.session_state:
     st.session_state.marker = None
 if "lat_lon" not in st.session_state:
     st.session_state.lat_lon = (None, None)
-
-# ---------------- Streamlit UI ----------------
-st.title("Street Surface Classification & GPS")
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
@@ -159,17 +159,15 @@ if uploaded_file:
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     st.image(image, caption="Uploaded Image", width=400)
 
-    # Load model and transform
-    with st.spinner("Loading model, please wait..."):
-        model = load_model()
-        transform = get_transform()
-
     # Prediction
-    img_tensor = transform(image).unsqueeze(0).to(device)
-    with torch.no_grad():
-        out_type, out_qual = model(img_tensor)
-        main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
-        sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
+    with st.spinner("Predicting..."):
+        transform = get_transform()
+        model = load_model()
+        img_tensor = transform(image).unsqueeze(0).to(device)
+        with torch.no_grad():
+            out_type, out_qual = model(img_tensor)
+            main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
+            sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
 
     st.success(f"**Model:** {MODEL_NAME}")
     st.success(f"Predicted Surface Type: **{main_pred}**")
@@ -182,21 +180,22 @@ if uploaded_file:
     img_timestamp = get_image_timestamp(file_bytes)
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # GPS from image
+    # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
     if coords:
-        st.session_state.marker = coords
-        st.session_state.lat_lon = coords
-        st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
+        lat, lon = coords
+        st.session_state.marker = (lat, lon)
+        st.session_state.lat_lon = (lat, lon)
+        st.success(f"GPS metadata found: {lat}, {lon}")
     else:
-        st.session_state.lat_lon = (None, None)
+        lat, lon = (None, None)
         st.info("No GPS metadata found. Click on the map to select location.")
 
     # ---------------- Map ----------------
-    map_center = st.session_state.marker if st.session_state.marker else [35.68, 139.76]
+    map_center = [35.68, 139.76]  # constant center
     m = folium.Map(location=map_center, zoom_start=16)
 
-    # Add marker if exists
+    # Add existing marker if present
     if st.session_state.marker:
         folium.Marker(
             st.session_state.marker,
@@ -204,21 +203,19 @@ if uploaded_file:
             icon=folium.Icon(color="blue", icon="info-sign")
         ).add_to(m)
 
+    # Display map
     map_data = st_folium(m, width=700, height=500)
 
     # Update marker if user clicks
     if map_data and map_data.get("last_clicked"):
-        st.session_state.marker = (
-            map_data["last_clicked"]["lat"],
-            map_data["last_clicked"]["lng"]
-        )
-        st.session_state.lat_lon = st.session_state.marker
+        lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
+        st.session_state.marker = (lat, lon)
+        st.session_state.lat_lon = (lat, lon)
 
-    # ---------------- Display coordinates & reverse geocoding ----------------
-    lat, lon = st.session_state.lat_lon
+    # ---------------- Display coordinates and reverse geocoding ----------------
     street_name, city_name = None, None
-
-    if lat and lon:
+    if st.session_state.marker:
+        lat, lon = st.session_state.marker
         st.info(f"Coordinates: {lat}, {lon}")
         try:
             geolocator = Nominatim(user_agent="street_app")
@@ -230,10 +227,10 @@ if uploaded_file:
         except:
             street_name, city_name = None, None
 
-    if street_name:
-        st.info(f"Street: {street_name}")
-    if city_name:
-        st.info(f"City: {city_name}")
+        if street_name:
+            st.info(f"Street: {street_name}")
+        if city_name:
+            st.info(f"City: {city_name}")
 
     # ---------------- Lookup ward email ----------------
     to_email = None
