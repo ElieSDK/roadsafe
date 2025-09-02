@@ -213,16 +213,18 @@ if uploaded_file and model:
         except:
             street_name, city_name = None, None
 
-    # Lookup ward email
-    to_email = "recipient@example.com"
+    # ---------------- Lookup ward email ----------------
+    to_email = None
     if city_name:
         match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
         if not match.empty:
             to_email = match.iloc[0]["email"]
             st.success(f"Sending report to: {to_email}")
+        else:
+            st.warning("No valid email found for this city. Cannot send report.")
 
-    # Send report
-    if st.button("Send Report via Email"):
+    # ---------------- Send report ----------------
+    if to_email and st.button("Send Report via Email"):
         subject = "Street Surface Report"
         body = f"""Street Surface Report
 Surface Type: {main_pred}
