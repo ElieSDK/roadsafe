@@ -188,12 +188,12 @@ if uploaded_file:
         st.session_state.lat_lon = coords
         st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
     else:
+        st.session_state.marker = None         # <-- reset marker
+        st.session_state.lat_lon = (None, None) # <-- reset lat/lon
         st.info("No GPS metadata found. Showing Tokyo map.")
-        st.session_state.marker = None
-        st.session_state.lat_lon = (None, None)
 
     # ---------------- Folium Map ----------------
-    map_center = coords if coords else [35.68, 139.76]
+    map_center = coords if coords else [35.68, 139.76]  # Tokyo if no coords
     zoom_level = 16 if coords else 12
     m = folium.Map(location=map_center, zoom_start=zoom_level)
 
