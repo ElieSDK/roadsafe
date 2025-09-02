@@ -144,6 +144,7 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
+# Load model
 with st.spinner("Loading model, please wait..."):
     model = load_model()
     transform = get_transform()
@@ -174,39 +175,43 @@ if uploaded_file and model:
     img_timestamp = get_image_timestamp(file_bytes)
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ---------------- GPS ----------------
+    # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
     lat, lon = coords if coords else (None, None)
+
     if coords:
         st.success(f"GPS metadata found: {lat}, {lon}")
     else:
-        st.info("No GPS metadata found. Please select location on the map.")
+        st.info("No GPS metadata found. Click on the map to select location.")
 
     # ---------------- Map ----------------
     map_center = [lat or 35.68, lon or 139.76]
     m = folium.Map(location=map_center, zoom_start=16)
+    marker_layer = folium.FeatureGroup(name="marker_layer")
 
-    # Add marker if GPS exists
+    # Add GPS marker if exists
     if lat is not None and lon is not None:
         folium.Marker(
             [lat, lon],
             tooltip="Detected Location",
             icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(m)
+        ).add_to(marker_layer)
 
+    marker_layer.add_to(m)
+
+    # Display map and get last click
     map_data = st_folium(m, width=700, height=500)
 
-    # Update marker if user clicks on map
-    if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
+    # User click: only add a marker if no GPS or user wants to override
+    if map_data and map_data.get("last_clicked"):
         lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-
-        # Recreate map centered on clicked location
-        m = folium.Map(location=[lat, lon], zoom_start=16)
+        marker_layer = folium.FeatureGroup(name="marker_layer")
         folium.Marker(
             [lat, lon],
             tooltip="Selected Location",
             icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(m)
+        ).add_to(marker_layer)
+        marker_layer.add_to(m)
         st_folium(m, width=700, height=500)
         st.success(f"Location selected: {lat}, {lon}")
 
