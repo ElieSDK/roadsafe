@@ -145,7 +145,7 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
-# Initialize session state
+# ---------------- Session State ----------------
 if "marker" not in st.session_state:
     st.session_state.marker = None
 if "lat_lon" not in st.session_state:
@@ -159,7 +159,7 @@ if uploaded_file:
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     st.image(image, caption="Uploaded Image", width=400)
 
-    # Prediction
+    # ---------------- Prediction ----------------
     with st.spinner("Predicting..."):
         transform = get_transform()
         model = load_model()
@@ -176,47 +176,45 @@ if uploaded_file:
     if sub_pred in ["excellent", "good"]:
         st.warning("The road seems to be in good condition. Are you sure you want to report it?")
 
-    # Timestamps
+    # ---------------- Timestamps ----------------
     img_timestamp = get_image_timestamp(file_bytes)
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # GPS
+    # ---------------- GPS ----------------
     coords = get_gps_coords_from_bytes(file_bytes)
     if coords:
-        lat, lon = coords
-        st.session_state.marker = (lat, lon)
-        st.session_state.lat_lon = (lat, lon)
-        st.success(f"GPS metadata found: {lat}, {lon}")
+        st.session_state.marker = coords
+        st.session_state.lat_lon = coords
+        st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
     else:
-        lat, lon = (None, None)
         st.info("No GPS metadata found. Click on the map to select location.")
 
-    # ---------------- Map ----------------
+    # ---------------- Folium Map ----------------
     map_center = [35.68, 139.76]  # constant center
     m = folium.Map(location=map_center, zoom_start=16)
 
-    # Add existing marker if present
+    # Marker layer
+    marker_layer = folium.FeatureGroup(name="marker_layer")
     if st.session_state.marker:
         folium.Marker(
             st.session_state.marker,
             tooltip="Detected Location",
             icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(m)
+        ).add_to(marker_layer)
+    marker_layer.add_to(m)
 
-    # Display map
+    # Render map
     map_data = st_folium(m, width=700, height=500)
 
-    # Update marker if user clicks
+    # Update marker after click
     if map_data and map_data.get("last_clicked"):
-        lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-        st.session_state.marker = (lat, lon)
-        st.session_state.lat_lon = (lat, lon)
+        st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
-    # ---------------- Display coordinates and reverse geocoding ----------------
-    street_name, city_name = None, None
+    # ---------------- Reverse Geocoding & Coordinates ----------------
     if st.session_state.marker:
         lat, lon = st.session_state.marker
         st.info(f"Coordinates: {lat}, {lon}")
+        street_name, city_name = None, None
         try:
             geolocator = Nominatim(user_agent="street_app")
             location = geolocator.reverse((lat, lon), language='en')
@@ -232,7 +230,7 @@ if uploaded_file:
         if city_name:
             st.info(f"City: {city_name}")
 
-    # ---------------- Lookup ward email ----------------
+    # ---------------- Email ----------------
     to_email = None
     if city_name:
         match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
@@ -242,7 +240,6 @@ if uploaded_file:
         else:
             st.warning("No valid email found for this city. Cannot send report.")
 
-    # ---------------- Send report ----------------
     if to_email and st.button("Send Report via Email"):
         subject = "Street Surface Report"
         body = f"""Street Surface Report
