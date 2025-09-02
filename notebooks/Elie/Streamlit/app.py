@@ -23,7 +23,6 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 MODEL_NAME = "EfficientNet-B7"
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -41,7 +40,7 @@ def load_emails():
         df = pd.read_csv(csv_path)
         return df
     except Exception as e:
-        st.error(f"Could not read csv.csv: {e}")
+        st.error(f"Could not read city.csv: {e}")
         return pd.DataFrame(columns=["city", "email"])
 
 EMAIL_DF = load_emails()
@@ -145,7 +144,6 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
-# Always EfficientNet-B7
 with st.spinner("Loading model, please wait..."):
     model = load_model()
     transform = get_transform()
@@ -176,7 +174,7 @@ if uploaded_file and model:
     img_timestamp = get_image_timestamp(file_bytes)
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # GPS
+    # ---------------- GPS ----------------
     coords = get_gps_coords_from_bytes(file_bytes)
     lat, lon = coords if coords else (None, None)
     if coords:
@@ -184,58 +182,27 @@ if uploaded_file and model:
     else:
         st.info("No GPS metadata found. Please select location on the map.")
 
-    # Map
-    map_center = [lat, lon] if lat and lon else [35.68, 139.76]
+    # ---------------- Map ----------------
+    map_center = [lat or 35.68, lon or 139.76]
     m = folium.Map(location=map_center, zoom_start=16)
-    if lat and lon:
-        folium.Marker([lat, lon], tooltip="Detected Location").add_to(m)
+
+    # Add marker if GPS exists
+    if lat is not None and lon is not None:
+        folium.Marker(
+            [lat, lon],
+            tooltip="Detected Location",
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(m)
+
     map_data = st_folium(m, width=700, height=500)
 
+    # Update marker if user clicks on map
     if map_data and "last_clicked" in map_data and map_data["last_clicked"]:
         lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-        st.success(f"Location selected: {lat}, {lon}")
 
-    # Reverse geocoding
-    street_name, city_name = None, None
-    if lat and lon:
-        try:
-            geolocator = Nominatim(user_agent="street_app")
-            location = geolocator.reverse((lat, lon), language='en')
-            if location:
-                addr = location.raw.get("address", {})
-                street_name = addr.get("road")
-                city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
-                if street_name:
-                    st.info(f"Street detected: {street_name}")
-                if city_name:
-                    st.info(f"City detected: {city_name}")
-        except:
-            street_name, city_name = None, None
-
-    # ---------------- Lookup ward email ----------------
-    to_email = None
-    if city_name:
-        match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
-        if not match.empty:
-            to_email = match.iloc[0]["email"]
-            st.success(f"Sending report to: {to_email}")
-        else:
-            st.warning("No valid email found for this city. Cannot send report.")
-
-    # ---------------- Send report ----------------
-    if to_email and st.button("Send Report via Email"):
-        subject = "Street Surface Report"
-        body = f"""Street Surface Report
-Surface Type: {main_pred}
-Surface Quality: {sub_pred}
-Street Name: {street_name if street_name else 'Unknown'}
-City: {city_name if city_name else 'Unknown'}
-GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
-Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
-Upload time: {upload_timestamp}
-"""
-        success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
-        if success:
-            st.success("Report sent successfully!")
-        else:
-            st.error(f"Failed to send email: {info}")
+        # Recreate map centered on clicked location
+        m = folium.Map(location=[lat, lon], zoom_start=16)
+        folium.Marker(
+            [lat, lon],
+            tooltip="Selected Location",
+            icon=folium.Icon
