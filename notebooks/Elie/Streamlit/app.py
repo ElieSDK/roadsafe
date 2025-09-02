@@ -17,11 +17,11 @@ from datetime import datetime
 from huggingface_hub import hf_hub_download
 import os
 
-# ---------------- Load environment variables ----------------
+# Load environment variables
 GMAIL_USER = st.secrets.get("gmail", {}).get("user")
 GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
-# ---------------- Config ----------------
+# Config
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -32,7 +32,7 @@ SURFACE_QUALITY_MAP_INV = {v: k for k, v in SURFACE_QUALITY_MAP.items()}
 
 NUM_MATERIALS, NUM_QUALITIES = 5, 5
 
-# ---------------- Load CSV ----------------
+# Load CSV
 def load_emails():
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "city.csv")
@@ -44,7 +44,7 @@ def load_emails():
 
 EMAIL_DF = load_emails()
 
-# ---------------- Multi-head EfficientNet-B7 ----------------
+# Multi-head EfficientNet-B7
 class MultiHeadEffNetB7(nn.Module):
     def __init__(self):
         super().__init__()
@@ -58,7 +58,7 @@ class MultiHeadEffNetB7(nn.Module):
         x = self.features(x).flatten(1)
         return self.mat(x), self.qual(x)
 
-# ---------------- Model Loader ----------------
+# Model Loader
 @st.cache_resource
 def load_model():
     try:
@@ -78,7 +78,7 @@ def load_model():
         st.error(f"Failed to load model: {e}")
         return None
 
-# ---------------- Transform ----------------
+# Transform
 def get_transform():
     return transforms.Compose([
         transforms.Resize((600, 600)),
@@ -87,7 +87,7 @@ def get_transform():
                              std=[0.229, 0.224, 0.225])
     ])
 
-# ---------------- GPS & EXIF ----------------
+# GPS & EXIF
 def get_gps_coords_from_bytes(file_bytes):
     try:
         exif_dict = piexif.load(file_bytes)
@@ -116,7 +116,7 @@ def get_image_timestamp(file_bytes):
     except:
         return None
 
-# ---------------- Email ----------------
+# Email
 def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="image.jpg"):
     if not GMAIL_USER or not GMAIL_PASSWORD:
         return False, "Email credentials not found. Please set them in Streamlit secrets."
@@ -140,10 +140,10 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
     except Exception as e:
         return False, str(e)
 
-# ---------------- Streamlit UI ----------------
+# Streamlit UI
 st.title("Street Surface Classification & GPS")
 
-# ---------------- Session State ----------------
+# Session State
 if "marker" not in st.session_state:
     st.session_state.marker = None
 if "lat_lon" not in st.session_state:
@@ -157,7 +157,7 @@ if uploaded_file:
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     st.image(image, caption="Uploaded Image", use_container_width=True)
 
-    # ---------------- Prediction ----------------
+    # Prediction
     with st.spinner("Predicting..."):
         transform = get_transform()
         model = load_model()
@@ -177,11 +177,11 @@ if uploaded_file:
     if sub_pred in ["excellent", "good"]:
         st.warning("The road seems to be in good condition. Are you sure you want to report it?")
 
-    # ---------------- Timestamps ----------------
+    # Timestamps
     img_timestamp = get_image_timestamp(file_bytes)
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ---------------- GPS ----------------
+    # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
     if coords:
         st.session_state.marker = coords
@@ -192,7 +192,7 @@ if uploaded_file:
         st.session_state.lat_lon = (None, None) # <-- reset lat/lon
         st.info("No GPS metadata found. Showing Tokyo map.")
 
-    # ---------------- Folium Map ----------------
+    # Folium Map
     map_center = coords if coords else [35.68, 139.76]  # Tokyo if no coords
     zoom_level = 16 if coords else 12
     m = folium.Map(location=map_center, zoom_start=zoom_level)
@@ -211,7 +211,7 @@ if uploaded_file:
     if map_data and map_data.get("last_clicked"):
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
-    # ---------------- Reverse Geocoding ----------------
+    # Reverse Geocoding
     street_name, city_name = None, None
     if st.session_state.marker:
         lat, lon = st.session_state.marker
@@ -231,7 +231,7 @@ if uploaded_file:
     if city_name:
         st.info(f"City: {city_name}")
 
-    # ---------------- Email ----------------
+    # Email
     to_email = None
     if city_name:
         match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
@@ -258,7 +258,7 @@ Upload time: {upload_timestamp}
         else:
             st.error(f"Failed to send email: {info}")
 
-# ---------------- Footer ----------------
+# Footer
 st.markdown(
     """
     <div style="margin-top: 50px; font-size: 14px; text-align: center;">
