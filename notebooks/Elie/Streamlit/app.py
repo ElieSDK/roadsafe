@@ -205,4 +205,52 @@ if uploaded_file and model:
         folium.Marker(
             [lat, lon],
             tooltip="Selected Location",
-            icon=folium.Icon
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(m)
+        st_folium(m, width=700, height=500)
+        st.success(f"Location selected: {lat}, {lon}")
+
+    # ---------------- Reverse geocoding ----------------
+    street_name, city_name = None, None
+    if lat and lon:
+        try:
+            geolocator = Nominatim(user_agent="street_app")
+            location = geolocator.reverse((lat, lon), language='en')
+            if location:
+                addr = location.raw.get("address", {})
+                street_name = addr.get("road")
+                city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
+                if street_name:
+                    st.info(f"Street detected: {street_name}")
+                if city_name:
+                    st.info(f"City detected: {city_name}")
+        except:
+            street_name, city_name = None, None
+
+    # ---------------- Lookup ward email ----------------
+    to_email = None
+    if city_name:
+        match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
+        if not match.empty:
+            to_email = match.iloc[0]["email"]
+            st.success(f"Sending report to: {to_email}")
+        else:
+            st.warning("No valid email found for this city. Cannot send report.")
+
+    # ---------------- Send report ----------------
+    if to_email and st.button("Send Report via Email"):
+        subject = "Street Surface Report"
+        body = f"""Street Surface Report
+Surface Type: {main_pred}
+Surface Quality: {sub_pred}
+Street Name: {street_name if street_name else 'Unknown'}
+City: {city_name if city_name else 'Unknown'}
+GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
+Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
+Upload time: {upload_timestamp}
+"""
+        success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
+        if success:
+            st.success("Report sent successfully!")
+        else:
+            st.error(f"Failed to send email: {info}")
