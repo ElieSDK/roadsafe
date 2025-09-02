@@ -167,7 +167,7 @@ if uploaded_file:
             main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
             sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
 
-    # Format predictions (capitalize + replace _)
+    # Format predictions
     main_pred_fmt = main_pred.replace("_", " ").capitalize()
     sub_pred_fmt = sub_pred.replace("_", " ").capitalize()
 
@@ -188,13 +188,15 @@ if uploaded_file:
         st.session_state.lat_lon = coords
         st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
     else:
-        st.info("No GPS metadata found. Click on the map to select location.")
+        st.info("No GPS metadata found. Showing Tokyo map.")
+        st.session_state.marker = None
+        st.session_state.lat_lon = (None, None)
 
     # ---------------- Folium Map ----------------
-    map_center = st.session_state.marker if st.session_state.marker else [35.68, 139.76]  # center on GPS if available
-    m = folium.Map(location=map_center, zoom_start=16)
+    map_center = coords if coords else [35.68, 139.76]
+    zoom_level = 16 if coords else 12
+    m = folium.Map(location=map_center, zoom_start=zoom_level)
 
-    # Marker layer
     marker_layer = folium.FeatureGroup(name="marker_layer")
     if st.session_state.marker:
         folium.Marker(
@@ -204,14 +206,12 @@ if uploaded_file:
         ).add_to(marker_layer)
     marker_layer.add_to(m)
 
-    # Render map
     map_data = st_folium(m, width=700, height=500)
 
-    # Update marker after click
     if map_data and map_data.get("last_clicked"):
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
-    # ---------------- Reverse Geocoding & Coordinates ----------------
+    # ---------------- Reverse Geocoding ----------------
     street_name, city_name = None, None
     if st.session_state.marker:
         lat, lon = st.session_state.marker
