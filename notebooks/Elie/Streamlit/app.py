@@ -155,7 +155,7 @@ if uploaded_file:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", width=st.columns(1)[0].width)
+    st.image(image, caption="Uploaded Image", width=None)
 
     # Prediction
     with st.spinner("Predicting..."):
