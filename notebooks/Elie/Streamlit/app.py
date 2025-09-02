@@ -23,7 +23,6 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 MODEL_NAME = "EfficientNet-B7"
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -41,7 +40,7 @@ def load_emails():
         df = pd.read_csv(csv_path)
         return df
     except Exception as e:
-        st.error(f"Could not read city.csv: {e}")
+        st.error(f"Could not read csv.csv: {e}")
         return pd.DataFrame(columns=["city", "email"])
 
 EMAIL_DF = load_emails()
@@ -145,18 +144,26 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
+# Load model and transform
+with st.spinner("Loading model, please wait..."):
+    model = load_model()
+    transform = get_transform()
+
+# Initialize session state for marker
+if "marker" not in st.session_state:
+    st.session_state.marker = None
+
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-if uploaded_file:
+if uploaded_file and model:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     st.image(image, caption="Uploaded Image", width=400)
 
     # Prediction
-    with st.spinner("Analyzing image..."):
-        img_tensor = get_transform()(image).unsqueeze(0).to(device)
-        model = load_model()
+    img_tensor = transform(image).unsqueeze(0).to(device)
+    with torch.no_grad():
         out_type, out_qual = model(img_tensor)
         main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
         sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
@@ -174,30 +181,13 @@ if uploaded_file:
 
     # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
-    if "marker" not in st.session_state:
+    if coords:
         st.session_state.marker = coords
 
-    # ---------------- Map ----------------
-    map_center = st.session_state.marker if st.session_state.marker else (35.68, 139.76)
-    m = folium.Map(location=map_center, zoom_start=16)
-
-    if st.session_state.marker:
-        folium.Marker(
-            st.session_state.marker,
-            tooltip="Detected Location" if coords else "Selected Location",
-            icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(m)
-
-    # Capture click
-    map_data = st_folium(m, width=700, height=500, returned_objects=["last_clicked"])
-    if map_data and map_data.get("last_clicked"):
-        st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
-
-    lat, lon = st.session_state.marker if st.session_state.marker else (None, None)
-
-    # ---------------- Reverse geocoding ----------------
+    # ---------------- Reverse Geocoding ----------------
     street_name, city_name = None, None
-    if lat and lon:
+    if st.session_state.marker:
+        lat, lon = st.session_state.marker
         try:
             geolocator = Nominatim(user_agent="street_app")
             location = geolocator.reverse((lat, lon), language='en')
@@ -207,14 +197,35 @@ if uploaded_file:
                 city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
         except:
             street_name, city_name = None, None
+    else:
+        lat, lon = None, None
 
-    # ---------------- Info box ----------------
-    if lat and lon:
-        st.info(f"Coordinates: {lat:.6f}, {lon:.6f}")
+    # Display coordinates and street name
+    st.info(f"**Coordinates:** {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}")
     if street_name:
-        st.info(f"Street: {street_name}")
-    if city_name:
-        st.info(f"City: {city_name}")
+        st.info(f"**Street:** {street_name}")
+
+    # ---------------- Map ----------------
+    map_center = st.session_state.marker if st.session_state.marker else [35.68, 139.76]
+    m = folium.Map(location=map_center, zoom_start=16)
+
+    # Add marker if exists
+    if st.session_state.marker:
+        folium.Marker(
+            st.session_state.marker,
+            tooltip="Selected Location",
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(m)
+
+    # Render map
+    map_data = st_folium(m, width=700, height=500)
+
+    # Update marker when user clicks
+    if map_data and map_data.get("last_clicked"):
+        st.session_state.marker = (
+            map_data["last_clicked"]["lat"],
+            map_data["last_clicked"]["lng"]
+        )
 
     # ---------------- Lookup ward email ----------------
     to_email = None
