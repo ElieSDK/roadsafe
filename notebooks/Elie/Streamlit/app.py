@@ -15,13 +15,11 @@ import smtplib
 from email.message import EmailMessage
 from datetime import datetime
 from huggingface_hub import hf_hub_download
-from dotenv import load_dotenv
 import os
 
 # ---------------- Load environment variables ----------------
-load_dotenv()
-GMAIL_USER = os.getenv("GMAIL_USER")
-GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
+GMAIL_USER = st.secrets.get("gmail", {}).get("user")
+GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -40,7 +38,7 @@ NUM_MATERIALS, NUM_QUALITIES = 5, 5
 @st.cache_data
 def load_emails():
     try:
-        csv_path = os.path.join(os.path.dirname(__file__), "csv.csv")
+        csv_path = os.path.join(os.path.dirname(__file__), "city.csv")
         df = pd.read_csv(csv_path)
         return df
     except Exception as e:
@@ -124,7 +122,7 @@ def get_image_timestamp(file_bytes):
 # ---------------- Email ----------------
 def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="image.jpg"):
     if not GMAIL_USER or not GMAIL_PASSWORD:
-        return False, "Email credentials not found. Set them in the .env file."
+        return False, "Email credentials not found. Please set them in Streamlit secrets."
     msg = EmailMessage()
     msg["From"] = GMAIL_USER
     msg["To"] = to_email
