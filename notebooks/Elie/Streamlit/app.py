@@ -155,7 +155,7 @@ if uploaded_file:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     # ---------------- Prediction ----------------
     with st.spinner("Predicting..."):
@@ -261,7 +261,7 @@ Upload time: {upload_timestamp}
 # ---------------- Footer ----------------
 st.markdown(
     """
-    <div style="position: fixed; bottom: 10px; right: 20px; font-size: 14px; text-align: right;">
+    <div style="position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 14px; text-align: center;">
         <a href="https://www.linkedin.com/in/arina-w/" target="_blank">Wahab Arina</a> |
         <a href="https://www.linkedin.com/in/eliesdk" target="_blank">Sadaka Elie</a> |
         <a href="https://github.com/Marxi7" target="_blank">Scuderi Marcello</a>
