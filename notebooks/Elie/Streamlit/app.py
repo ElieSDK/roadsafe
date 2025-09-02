@@ -261,7 +261,7 @@ Upload time: {upload_timestamp}
 # ---------------- Footer ----------------
 st.markdown(
     """
-    <div style="position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 14px; text-align: center;">
+    <div style="margin-top: 50px; font-size: 14px; text-align: center;">
         <a href="https://www.linkedin.com/in/arina-w/" target="_blank">Wahab Arina</a> |
         <a href="https://www.linkedin.com/in/eliesdk" target="_blank">Sadaka Elie</a> |
         <a href="https://github.com/Marxi7" target="_blank">Scuderi Marcello</a>
