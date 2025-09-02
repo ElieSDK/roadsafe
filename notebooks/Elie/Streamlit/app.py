@@ -24,8 +24,6 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-MODEL_NAME = "EfficientNet-B7"
-
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
 SURFACE_TYPE_MAP_INV = {v: k for k, v in SURFACE_TYPE_MAP.items()}
 
@@ -157,7 +155,7 @@ if uploaded_file:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", width=400)
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
     # ---------------- Prediction ----------------
     with st.spinner("Predicting..."):
@@ -169,9 +167,12 @@ if uploaded_file:
             main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
             sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
 
-    st.success(f"**Model:** {MODEL_NAME}")
-    st.success(f"Predicted Surface Type: **{main_pred}**")
-    st.success(f"Predicted Surface Quality: **{sub_pred}**")
+    # Format predictions (capitalize + replace _)
+    main_pred_fmt = main_pred.replace("_", " ").capitalize()
+    sub_pred_fmt = sub_pred.replace("_", " ").capitalize()
+
+    st.success(f"Surface Type: **{main_pred_fmt}**")
+    st.success(f"Surface Quality: **{sub_pred_fmt}**")
 
     if sub_pred in ["excellent", "good"]:
         st.warning("The road seems to be in good condition. Are you sure you want to report it?")
@@ -190,7 +191,7 @@ if uploaded_file:
         st.info("No GPS metadata found. Click on the map to select location.")
 
     # ---------------- Folium Map ----------------
-    map_center = [35.68, 139.76]  # constant center
+    map_center = st.session_state.marker if st.session_state.marker else [35.68, 139.76]  # center on GPS if available
     m = folium.Map(location=map_center, zoom_start=16)
 
     # Marker layer
@@ -211,7 +212,7 @@ if uploaded_file:
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
     # ---------------- Reverse Geocoding & Coordinates ----------------
-    street_name, city_name = None, None  # <-- FIX: initialize variables before use
+    street_name, city_name = None, None
     if st.session_state.marker:
         lat, lon = st.session_state.marker
         st.info(f"Coordinates: {lat}, {lon}")
@@ -243,8 +244,8 @@ if uploaded_file:
     if to_email and st.button("Send Report via Email"):
         subject = "Street Surface Report"
         body = f"""Street Surface Report
-Surface Type: {main_pred}
-Surface Quality: {sub_pred}
+Surface Type: {main_pred_fmt}
+Surface Quality: {sub_pred_fmt}
 Street Name: {street_name if street_name else 'Unknown'}
 City: {city_name if city_name else 'Unknown'}
 GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
@@ -256,3 +257,15 @@ Upload time: {upload_timestamp}
             st.success("Report sent successfully!")
         else:
             st.error(f"Failed to send email: {info}")
+
+# ---------------- Footer ----------------
+st.markdown(
+    """
+    <div style="position: fixed; bottom: 10px; right: 20px; font-size: 14px; text-align: right;">
+        <a href="https://www.linkedin.com/in/arina-w/" target="_blank">Wahab Arina</a> |
+        <a href="https://www.linkedin.com/in/eliesdk" target="_blank">Sadaka Elie</a> |
+        <a href="https://github.com/Marxi7" target="_blank">Scuderi Marcello</a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
