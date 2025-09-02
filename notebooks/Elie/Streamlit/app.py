@@ -211,10 +211,10 @@ if uploaded_file:
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
     # ---------------- Reverse Geocoding & Coordinates ----------------
+    street_name, city_name = None, None  # <-- FIX: initialize variables before use
     if st.session_state.marker:
         lat, lon = st.session_state.marker
         st.info(f"Coordinates: {lat}, {lon}")
-        street_name, city_name = None, None
         try:
             geolocator = Nominatim(user_agent="street_app")
             location = geolocator.reverse((lat, lon), language='en')
@@ -225,10 +225,10 @@ if uploaded_file:
         except:
             street_name, city_name = None, None
 
-        if street_name:
-            st.info(f"Street: {street_name}")
-        if city_name:
-            st.info(f"City: {city_name}")
+    if street_name:
+        st.info(f"Street: {street_name}")
+    if city_name:
+        st.info(f"City: {city_name}")
 
     # ---------------- Email ----------------
     to_email = None
