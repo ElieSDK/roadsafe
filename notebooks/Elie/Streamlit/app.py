@@ -23,6 +23,7 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 MODEL_NAME = "EfficientNet-B7"
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -144,26 +145,18 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
-# Load model
-with st.spinner("Loading model, please wait..."):
-    model = load_model()
-    transform = get_transform()
-
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-# Initialize session state for marker
-if "marker" not in st.session_state:
-    st.session_state.marker = None  # Stores (lat, lon)
-
-if uploaded_file and model:
+if uploaded_file:
     uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     st.image(image, caption="Uploaded Image", width=400)
 
     # Prediction
-    img_tensor = transform(image).unsqueeze(0).to(device)
-    with torch.no_grad():
+    with st.spinner("Analyzing image..."):
+        img_tensor = get_transform()(image).unsqueeze(0).to(device)
+        model = load_model()
         out_type, out_qual = model(img_tensor)
         main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
         sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
@@ -181,36 +174,30 @@ if uploaded_file and model:
 
     # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
-    if coords:
+    if "marker" not in st.session_state:
         st.session_state.marker = coords
-        st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
-    else:
-        st.info("No GPS metadata found. Click on the map to select location.")
 
     # ---------------- Map ----------------
-    map_center = st.session_state.marker or (35.68, 139.76)
+    map_center = st.session_state.marker if st.session_state.marker else (35.68, 139.76)
     m = folium.Map(location=map_center, zoom_start=16)
 
-    # Add marker if exists
     if st.session_state.marker:
         folium.Marker(
             st.session_state.marker,
-            tooltip="Selected Location",
+            tooltip="Detected Location" if coords else "Selected Location",
             icon=folium.Icon(color="blue", icon="info-sign")
         ).add_to(m)
 
-    # Display map and capture click
+    # Capture click
     map_data = st_folium(m, width=700, height=500, returned_objects=["last_clicked"])
-
-    # Update marker on click
     if map_data and map_data.get("last_clicked"):
-        lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-        st.session_state.marker = (lat, lon)
+        st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
-    # ---------------- Reverse Geocoding ----------------
+    lat, lon = st.session_state.marker if st.session_state.marker else (None, None)
+
+    # ---------------- Reverse geocoding ----------------
     street_name, city_name = None, None
-    if st.session_state.marker:
-        lat, lon = st.session_state.marker
+    if lat and lon:
         try:
             geolocator = Nominatim(user_agent="street_app")
             location = geolocator.reverse((lat, lon), language='en')
@@ -218,12 +205,16 @@ if uploaded_file and model:
                 addr = location.raw.get("address", {})
                 street_name = addr.get("road")
                 city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
-                if street_name:
-                    st.info(f"Street detected: {street_name}")
-                if city_name:
-                    st.info(f"City detected: {city_name}")
         except:
             street_name, city_name = None, None
+
+    # ---------------- Info box ----------------
+    if lat and lon:
+        st.info(f"Coordinates: {lat:.6f}, {lon:.6f}")
+    if street_name:
+        st.info(f"Street: {street_name}")
+    if city_name:
+        st.info(f"City: {city_name}")
 
     # ---------------- Lookup ward email ----------------
     to_email = None
@@ -243,7 +234,7 @@ Surface Type: {main_pred}
 Surface Quality: {sub_pred}
 Street Name: {street_name if street_name else 'Unknown'}
 City: {city_name if city_name else 'Unknown'}
-GPS: {st.session_state.marker[0] if st.session_state.marker else 'Unknown'}, {st.session_state.marker[1] if st.session_state.marker else 'Unknown'}
+GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
 Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
 Upload time: {upload_timestamp}
 """
