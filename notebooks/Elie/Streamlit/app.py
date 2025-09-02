@@ -35,7 +35,6 @@ SURFACE_QUALITY_MAP_INV = {v: k for k, v in SURFACE_QUALITY_MAP.items()}
 NUM_MATERIALS, NUM_QUALITIES = 5, 5
 
 # ---------------- Load CSV ----------------
-@st.cache_data
 def load_emails():
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "city.csv")
