@@ -23,7 +23,6 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 
 # ---------------- Config ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 MODEL_NAME = "EfficientNet-B7"
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -145,14 +144,16 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
 # ---------------- Streamlit UI ----------------
 st.title("Street Surface Classification & GPS")
 
-# Load model and transform
+# Load model
 with st.spinner("Loading model, please wait..."):
     model = load_model()
     transform = get_transform()
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
-lat, lon = None, None  # Initialize GPS variables
+# Initialize session state for marker
+if "marker" not in st.session_state:
+    st.session_state.marker = None  # Stores (lat, lon)
 
 if uploaded_file and model:
     uploaded_file.seek(0)
@@ -181,84 +182,73 @@ if uploaded_file and model:
     # GPS
     coords = get_gps_coords_from_bytes(file_bytes)
     if coords:
-        lat, lon = coords
-        st.success(f"GPS metadata found: {lat}, {lon}")
+        st.session_state.marker = coords
+        st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
     else:
-        st.info("No GPS metadata found. Please select location on the map.")
+        st.info("No GPS metadata found. Click on the map to select location.")
 
-# ---------------- Map ----------------
-map_center = [lat or 35.68, lon or 139.76]
-m = folium.Map(location=map_center, zoom_start=16)
-marker_layer = folium.FeatureGroup(name="marker_layer")
+    # ---------------- Map ----------------
+    map_center = st.session_state.marker or (35.68, 139.76)
+    m = folium.Map(location=map_center, zoom_start=16)
 
-# Add GPS marker if exists
-if lat is not None and lon is not None:
-    folium.Marker(
-        [lat, lon],
-        tooltip="Detected Location",
-        icon=folium.Icon(color="blue", icon="info-sign")
-    ).add_to(marker_layer)
+    # Add marker if exists
+    if st.session_state.marker:
+        folium.Marker(
+            st.session_state.marker,
+            tooltip="Selected Location",
+            icon=folium.Icon(color="blue", icon="info-sign")
+        ).add_to(m)
 
-marker_layer.add_to(m)
+    # Display map and capture click
+    map_data = st_folium(m, width=700, height=500, returned_objects=["last_clicked"])
 
-# Display map and capture click
-map_data = st_folium(m, width=700, height=500, returned_objects=["last_clicked"])
+    # Update marker on click
+    if map_data and map_data.get("last_clicked"):
+        lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
+        st.session_state.marker = (lat, lon)
 
-# Handle user click
-if map_data and map_data.get("last_clicked"):
-    lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-    # Clear previous marker layer
-    m = folium.Map(location=[lat, lon], zoom_start=16)
-    marker_layer = folium.FeatureGroup(name="marker_layer")
-    folium.Marker(
-        [lat, lon],
-        tooltip="Selected Location",
-        icon=folium.Icon(color="blue", icon="info-sign")
-    ).add_to(marker_layer)
-    marker_layer.add_to(m)
-    st.experimental_rerun()  # Update map with new marker
+    # ---------------- Reverse Geocoding ----------------
+    street_name, city_name = None, None
+    if st.session_state.marker:
+        lat, lon = st.session_state.marker
+        try:
+            geolocator = Nominatim(user_agent="street_app")
+            location = geolocator.reverse((lat, lon), language='en')
+            if location:
+                addr = location.raw.get("address", {})
+                street_name = addr.get("road")
+                city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
+                if street_name:
+                    st.info(f"Street detected: {street_name}")
+                if city_name:
+                    st.info(f"City detected: {city_name}")
+        except:
+            street_name, city_name = None, None
 
-# ---------------- Reverse Geocoding ----------------
-street_name, city_name = None, None
-if lat and lon:
-    try:
-        geolocator = Nominatim(user_agent="street_app")
-        location = geolocator.reverse((lat, lon), language='en')
-        if location:
-            addr = location.raw.get("address", {})
-            street_name = addr.get("road")
-            city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
-            if street_name:
-                st.info(f"Street detected: {street_name}")
-            if city_name:
-                st.info(f"City detected: {city_name}")
-    except:
-        street_name, city_name = None, None
+    # ---------------- Lookup ward email ----------------
+    to_email = None
+    if city_name:
+        match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
+        if not match.empty:
+            to_email = match.iloc[0]["email"]
+            st.success(f"Sending report to: {to_email}")
+        else:
+            st.warning("No valid email found for this city. Cannot send report.")
 
-# ---------------- Lookup ward email ----------------
-to_email = None
-if city_name:
-    match = EMAIL_DF[EMAIL_DF["city"].str.lower() == city_name.lower()]
-    if not match.empty:
-        to_email = match.iloc[0]["email"]
-        st.success(f"Sending report to: {to_email}")
-    else:
-        st.warning("No valid email found for this city. Cannot send report.")
-
-# ---------------- Send report ----------------
-if to_email and st.button("Send Report via Email") and uploaded_file:
-    subject = "Street Surface Report"
-    body = f"""Street Surface Report
+    # ---------------- Send report ----------------
+    if to_email and st.button("Send Report via Email"):
+        subject = "Street Surface Report"
+        body = f"""Street Surface Report
 Surface Type: {main_pred}
 Surface Quality: {sub_pred}
 Street Name: {street_name if street_name else 'Unknown'}
 City: {city_name if city_name else 'Unknown'}
-GPS: {lat if lat else 'Unknown'}, {lon if lon else 'Unknown'}
+GPS: {st.session_state.marker[0] if st.session_state.marker else 'Unknown'}, {st.session_state.marker[1] if st.session_state.marker else 'Unknown'}
 Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
 Upload time: {upload_timestamp}
 """
-    success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
-    if success:
-        st.success("Report sent successfully!")
-    else:
-        st.error(f"Failed to send email: {info}")
+        success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
+        if success:
+            st.success("Report sent successfully!")
+        else:
+            st.error(f"Failed to send email: {info}")
