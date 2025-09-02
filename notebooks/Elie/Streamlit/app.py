@@ -171,8 +171,8 @@ if uploaded_file:
     main_pred_fmt = main_pred.replace("_", " ").capitalize()
     sub_pred_fmt = sub_pred.replace("_", " ").capitalize()
 
-    st.success(f"Surface Type: **{main_pred_fmt}**")
-    st.success(f"Surface Quality: **{sub_pred_fmt}**")
+    st.success(f"Predicted Surface Type: **{main_pred_fmt}**")
+    st.success(f"Predicted Surface Quality: **{sub_pred_fmt}**")
 
     if sub_pred in ["excellent", "good"]:
         st.warning("The road seems to be in good condition. Are you sure you want to report it?")
