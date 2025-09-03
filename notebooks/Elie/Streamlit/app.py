@@ -17,11 +17,7 @@ from datetime import datetime
 from huggingface_hub import hf_hub_download
 import os
 
-# Load environment variables
-GMAIL_USER = st.secrets.get("gmail", {}).get("user")
-GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
-
-# Config
+# ------------------- CONFIG -------------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SURFACE_TYPE_MAP = {"asphalt": 0, "concrete": 1, "paving_stones": 2, "unpaved": 3, "sett": 4}
@@ -32,19 +28,41 @@ SURFACE_QUALITY_MAP_INV = {v: k for k, v in SURFACE_QUALITY_MAP.items()}
 
 NUM_MATERIALS, NUM_QUALITIES = 5, 5
 
-# Load CSV
+GMAIL_USER = st.secrets.get("gmail", {}).get("user")
+GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
+
+# ------------------- STYLES -------------------
+st.markdown("""
+<style>
+p, div, .stText, .stMarkdown, .st-ag {
+    font-size: 20px !important;
+    line-height: 1.5 !important;
+}
+.stAlert, .stAlert * {
+    font-size: 22px !important;
+}
+.stFileUploader label, .stFileUploader button, .stButton button {
+    font-size: 20px !important;
+    padding: 0.5rem 1rem !important;
+}
+.leaflet-popup-content {
+    font-size: 18px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------- UTILITIES -------------------
 def load_emails():
     try:
         csv_path = os.path.join(os.path.dirname(__file__), "city.csv")
-        df = pd.read_csv(csv_path)
-        return df
+        return pd.read_csv(csv_path)
     except Exception as e:
         st.error(f"Could not read city.csv: {e}")
         return pd.DataFrame(columns=["city", "email"])
 
 EMAIL_DF = load_emails()
 
-# Multi-head EfficientNet-B7
+# ------------------- MODEL -------------------
 class MultiHeadEffNetB7(nn.Module):
     def __init__(self):
         super().__init__()
@@ -58,15 +76,11 @@ class MultiHeadEffNetB7(nn.Module):
         x = self.features(x).flatten(1)
         return self.mat(x), self.qual(x)
 
-# Model Loader
 @st.cache_resource
 def load_model():
     try:
         model = MultiHeadEffNetB7().to(device)
-        local_path = hf_hub_download(
-            repo_id="esdk/my-efficientnet-model",
-            filename="efficientnet_fp16.pt.gz"
-        )
+        local_path = hf_hub_download(repo_id="esdk/my-efficientnet-model", filename="efficientnet_fp16.pt.gz")
         with gzip.open(local_path, "rb") as f:
             buffer = io.BytesIO(f.read())
             state_dict = torch.load(buffer, map_location=device)
@@ -78,7 +92,6 @@ def load_model():
         st.error(f"Failed to load model: {e}")
         return None
 
-# Transform
 def get_transform():
     return transforms.Compose([
         transforms.Resize((600, 600)),
@@ -87,51 +100,34 @@ def get_transform():
                              std=[0.229, 0.224, 0.225])
     ])
 
-# GPS & EXIF
 def get_gps_coords_from_bytes(file_bytes):
     try:
         exif_dict = piexif.load(file_bytes)
         gps = exif_dict.get("GPS")
-        if not gps:
-            return None
-        def rational_to_deg(rat):
-            return rat[0][0]/rat[0][1] + rat[1][0]/rat[1][1]/60 + rat[2][0]/rat[2][1]/3600
-        lat = rational_to_deg(gps[piexif.GPSIFD.GPSLatitude])
-        lon = rational_to_deg(gps[piexif.GPSIFD.GPSLongitude])
-        lat_ref = gps[piexif.GPSIFD.GPSLatitudeRef].decode()
-        lon_ref = gps[piexif.GPSIFD.GPSLongitudeRef].decode()
-        if lat_ref == "S": lat = -lat
-        if lon_ref == "W": lon = -lon
+        if not gps: return None
+        def rat2deg(rat): return rat[0][0]/rat[0][1] + rat[1][0]/rat[1][1]/60 + rat[2][0]/rat[2][1]/3600
+        lat = rat2deg(gps[piexif.GPSIFD.GPSLatitude])
+        lon = rat2deg(gps[piexif.GPSIFD.GPSLongitude])
+        if gps[piexif.GPSIFD.GPSLatitudeRef].decode() == "S": lat = -lat
+        if gps[piexif.GPSIFD.GPSLongitudeRef].decode() == "W": lon = -lon
         return lat, lon
-    except:
-        return None
+    except: return None
 
 def get_image_timestamp(file_bytes):
     try:
         exif_dict = piexif.load(file_bytes)
         dt_bytes = exif_dict.get("0th").get(piexif.ImageIFD.DateTime)
-        if dt_bytes:
-            return dt_bytes.decode()
-        return None
-    except:
-        return None
+        return dt_bytes.decode() if dt_bytes else None
+    except: return None
 
-# Email
 def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="image.jpg"):
     if not GMAIL_USER or not GMAIL_PASSWORD:
-        return False, "Email credentials not found. Please set them in Streamlit secrets."
+        return False, "Email credentials not found."
     msg = EmailMessage()
-    msg["From"] = GMAIL_USER
-    msg["To"] = to_email
-    msg["Subject"] = subject
+    msg["From"], msg["To"], msg["Subject"] = GMAIL_USER, to_email, subject
     msg.set_content(body, charset="utf-8")
     if attachment_bytes:
-        msg.add_attachment(
-            attachment_bytes,
-            maintype="image",
-            subtype="jpeg",
-            filename=attachment_name
-        )
+        msg.add_attachment(attachment_bytes, maintype="image", subtype="jpeg", filename=attachment_name)
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_PASSWORD)
@@ -140,24 +136,60 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
     except Exception as e:
         return False, str(e)
 
-# Streamlit UI
-st.title("Street Surface Classification & GPS")
+# ------------------- UI -------------------
+st.markdown("<h1 style='font-size:44px; text-align:center;'>Street Surface Classification & GPS</h1>", unsafe_allow_html=True)
 
-# Session State
-if "marker" not in st.session_state:
-    st.session_state.marker = None
-if "lat_lon" not in st.session_state:
-    st.session_state.lat_lon = (None, None)
+if "marker" not in st.session_state: st.session_state.marker = None
+if "lat_lon" not in st.session_state: st.session_state.lat_lon = (None, None)
 
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 
+# --- Helper to display colored blocks ---
+def display_surface_info(surface_type, surface_quality):
+    # Surface Type (always green like st.success)
+    st.markdown(f"""
+        <div style="
+            width:700px;
+            font-size:20px;
+            padding:12px 16px;
+            border-radius:6px;
+            color:white;
+            background-color:#198754;
+            margin-bottom:10px;">
+            <b>Surface Type:</b> {surface_type}
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Surface Quality (color varies)
+    color_map = {
+        "excellent": "#198754",  # same green as st.success
+        "good": "#198754",
+        "intermediate": "#ffc107",
+        "bad": "#dc3545",
+        "very_bad": "#dc3545"
+    }
+    color = color_map.get(surface_quality.lower(), "#6c757d")
+    st.markdown(f"""
+        <div style="
+            width:700px;
+            font-size:20px;
+            padding:12px 16px;
+            border-radius:6px;
+            color:white;
+            background-color:{color};
+            margin-bottom:10px;">
+            <b>Surface Quality:</b> {surface_quality}
+        </div>
+    """, unsafe_allow_html=True)
+
+# --- Main app logic ---
 if uploaded_file:
-    uploaded_file.seek(0)
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image")
+    st.image(image, caption="Uploaded Image", width=700)
 
-    # Prediction
+    st.markdown("<h2 style='text-align:center;'>ANALYSIS</h2>", unsafe_allow_html=True)
+
     with st.spinner("Predicting..."):
         transform = get_transform()
         model = load_model()
@@ -167,12 +199,10 @@ if uploaded_file:
             main_pred = SURFACE_TYPE_MAP_INV[out_type.argmax(1).item()]
             sub_pred = SURFACE_QUALITY_MAP_INV[out_qual.argmax(1).item()]
 
-    # Format predictions
     main_pred_fmt = main_pred.replace("_", " ").capitalize()
     sub_pred_fmt = sub_pred.replace("_", " ").capitalize()
 
-    st.success(f"Predicted Surface Type: **{main_pred_fmt}**")
-    st.success(f"Predicted Surface Quality: **{sub_pred_fmt}**")
+    display_surface_info(main_pred_fmt, sub_pred_fmt)
 
     if sub_pred in ["excellent", "good"]:
         st.warning("The road seems to be in good condition. Are you sure you want to report it?")
@@ -182,36 +212,34 @@ if uploaded_file:
     upload_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # GPS
+    st.markdown("<h2 style='text-align:center;'>GPS LOCATION</h2>", unsafe_allow_html=True)
     coords = get_gps_coords_from_bytes(file_bytes)
+
     if coords:
         st.session_state.marker = coords
         st.session_state.lat_lon = coords
         st.success(f"GPS metadata found: {coords[0]}, {coords[1]}")
     else:
-        st.session_state.marker = None         # <-- reset marker
-        st.session_state.lat_lon = (None, None) # <-- reset lat/lon
+        st.session_state.marker = None
+        st.session_state.lat_lon = (None, None)
         st.info("No GPS metadata found. Please select a location on the map.")
 
-    # Folium Map
-    map_center = coords if coords else [35.68, 139.76]  # Tokyo if no coords
+    map_center = coords if coords else [3.1390, 101.6869]
     zoom_level = 16 if coords else 12
     m = folium.Map(location=map_center, zoom_start=zoom_level)
 
-    marker_layer = folium.FeatureGroup(name="marker_layer")
     if st.session_state.marker:
         folium.Marker(
             st.session_state.marker,
             tooltip="Detected Location",
             icon=folium.Icon(color="blue", icon="info-sign")
-        ).add_to(marker_layer)
-    marker_layer.add_to(m)
+        ).add_to(m)
 
     map_data = st_folium(m, width=700, height=500)
-
     if map_data and map_data.get("last_clicked"):
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
-    # Reverse Geocoding
+    # Reverse geocoding
     street_name, city_name = None, None
     if st.session_state.marker:
         lat, lon = st.session_state.marker
@@ -224,12 +252,12 @@ if uploaded_file:
                 street_name = addr.get("road")
                 city_name = addr.get("city") or addr.get("town") or addr.get("suburb")
         except:
-            street_name, city_name = None, None
+            pass
 
-    if street_name:
-        st.info(f"Street: {street_name}")
+    if street_name: st.info(f"Street: {street_name}")
     if city_name:
         st.info(f"City: {city_name}")
+        st.markdown("<h2 style='text-align:center;'>REPORT TO THE WARD CITY</h2>", unsafe_allow_html=True)
 
     # Email
     to_email = None
@@ -253,19 +281,16 @@ Picture taken: {img_timestamp if img_timestamp else 'Unknown'}
 Upload time: {upload_timestamp}
 """
         success, info = send_email(to_email, subject, body, file_bytes, "street_image.jpg")
-        if success:
-            st.success("Report sent successfully!")
-        else:
-            st.error(f"Failed to send email: {info}")
+        if success: st.success("Report sent successfully!")
+        else: st.error(f"Failed to send email: {info}")
 
 # Footer
-st.markdown(
-    """
-    <div style="margin-top: 50px; font-size: 14px; text-align: center;">
-        <a href="https://www.linkedin.com/in/arina-w/" target="_blank">Wahab Arina</a> |
-        <a href="https://www.linkedin.com/in/eliesdk" target="_blank">Sadaka Elie</a> |
-        <a href="https://github.com/Marxi7" target="_blank">Scuderi Marcello</a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("""
+<div style="margin-top: 50px; font-size: 18px; line-height:1.2; text-align:center;">
+    <a href="https://www.linkedin.com/in/arina-w/" target="_blank" style="font-size:18px; text-decoration:none;">Wahab Arina</a>
+    <span style="margin: 0 10px;">|</span>
+    <a href="https://www.linkedin.com/in/eliesdk" target="_blank" style="font-size:18px; text-decoration:none;">Sadaka Elie</a>
+    <span style="margin: 0 10px;">|</span>
+    <a href="https://github.com/Marxi7" target="_blank" style="font-size:18px; text-decoration:none;">Scuderi Marcello</a>
+</div>
+""", unsafe_allow_html=True)
