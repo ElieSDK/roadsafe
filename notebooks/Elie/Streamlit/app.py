@@ -48,6 +48,14 @@ p, div, .stText, .stMarkdown, .st-ag {
 .leaflet-popup-content {
     font-size: 18px !important;
 }
+.responsive-box {
+    max-width: 100%;
+    font-size: 20px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    color: white;
+    margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,23 +154,14 @@ uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png
 
 # --- Helper to display colored blocks ---
 def display_surface_info(surface_type, surface_quality):
-    # Surface Type (always green like st.success)
     st.markdown(f"""
-        <div style="
-            width:700px;
-            font-size:20px;
-            padding:12px 16px;
-            border-radius:6px;
-            color:white;
-            background-color:#198754;
-            margin-bottom:10px;">
+        <div class="responsive-box" style="background-color:#198754;">
             <b>Surface Type:</b> {surface_type}
         </div>
     """, unsafe_allow_html=True)
 
-    # Surface Quality (color varies)
     color_map = {
-        "excellent": "#198754",  # same green as st.success
+        "excellent": "#198754",
         "good": "#198754",
         "intermediate": "#ffc107",
         "bad": "#dc3545",
@@ -170,14 +169,7 @@ def display_surface_info(surface_type, surface_quality):
     }
     color = color_map.get(surface_quality.lower(), "#6c757d")
     st.markdown(f"""
-        <div style="
-            width:700px;
-            font-size:20px;
-            padding:12px 16px;
-            border-radius:6px;
-            color:white;
-            background-color:{color};
-            margin-bottom:10px;">
+        <div class="responsive-box" style="background-color:{color};">
             <b>Surface Quality:</b> {surface_quality}
         </div>
     """, unsafe_allow_html=True)
@@ -186,7 +178,7 @@ def display_surface_info(surface_type, surface_quality):
 if uploaded_file:
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", width=700)
+    st.image(image, caption="Uploaded Image", use_column_width=True)
 
     st.markdown("<h2 style='text-align:center;'>ANALYSIS</h2>", unsafe_allow_html=True)
 
@@ -235,7 +227,7 @@ if uploaded_file:
             icon=folium.Icon(color="blue", icon="info-sign")
         ).add_to(m)
 
-    map_data = st_folium(m, width=700, height=500)
+    map_data = st_folium(m, width="100%", height=500)
     if map_data and map_data.get("last_clicked"):
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
