@@ -178,7 +178,7 @@ def display_surface_info(surface_type, surface_quality):
 if uploaded_file:
     file_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
 
     st.markdown("<h2 style='text-align:center;'>ANALYSIS</h2>", unsafe_allow_html=True)
 
