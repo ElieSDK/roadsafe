@@ -34,27 +34,52 @@ GMAIL_PASSWORD = st.secrets.get("gmail", {}).get("app_password")
 # ------------------- STYLES -------------------
 st.markdown("""
 <style>
-p, div, .stText, .stMarkdown, .st-ag {
-    font-size: 20px !important;
-    line-height: 1.5 !important;
+/* General text */
+body, p, div, .stText, .stMarkdown, .st-ag {
+    font-size: 24px !important;
+    line-height: 1.8 !important;
 }
+
+/* Alerts */
 .stAlert, .stAlert * {
-    font-size: 22px !important;
+    font-size: 26px !important;
 }
+
+/* Buttons & uploaders */
 .stFileUploader label, .stFileUploader button, .stButton button {
-    font-size: 20px !important;
-    padding: 0.5rem 1rem !important;
+    font-size: 22px !important;
+    padding: 0.75rem 1.5rem !important;
 }
+
+/* Map popup */
 .leaflet-popup-content {
-    font-size: 18px !important;
+    font-size: 20px !important;
 }
+
+/* Colored info boxes */
 .responsive-box {
     max-width: 100%;
-    font-size: 20px;
-    padding: 12px 16px;
-    border-radius: 6px;
+    font-size: 32px !important;        /* bigger font */
+    font-weight: bold !important;      /* bold text */
+    padding: 20px 25px !important;    /* more padding */
+    border-radius: 10px !important;
     color: white;
-    margin-bottom: 10px;
+    margin-bottom: 20px !important;
+    text-align: left;                  /* left-align the text */
+}
+
+/* Headers */
+h1 {
+    font-size: 50px !important;
+}
+h2 {
+    font-size: 40px !important;
+}
+
+/* Footer links */
+.footer a {
+    font-size: 20px !important;
+    text-decoration: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -145,7 +170,7 @@ def send_email(to_email, subject, body, attachment_bytes=None, attachment_name="
         return False, str(e)
 
 # ------------------- UI -------------------
-st.markdown("<h1 style='font-size:44px; text-align:center;'>Street Surface Classification & GPS</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:center;'>Street Surface Classification & GPS</h1>", unsafe_allow_html=True)
 
 if "marker" not in st.session_state: st.session_state.marker = None
 if "lat_lon" not in st.session_state: st.session_state.lat_lon = (None, None)
@@ -227,7 +252,7 @@ if uploaded_file:
             icon=folium.Icon(color="blue", icon="info-sign")
         ).add_to(m)
 
-    map_data = st_folium(m, width="100%", height=500)
+    map_data = st_folium(m, width=900, height=600)
     if map_data and map_data.get("last_clicked"):
         st.session_state.marker = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
 
@@ -278,11 +303,11 @@ Upload time: {upload_timestamp}
 
 # Footer
 st.markdown("""
-<div style="margin-top: 50px; font-size: 18px; line-height:1.2; text-align:center;">
-    <a href="https://www.linkedin.com/in/arina-w/" target="_blank" style="font-size:18px; text-decoration:none;">Wahab Arina</a>
-    <span style="margin: 0 10px;">|</span>
-    <a href="https://www.linkedin.com/in/eliesdk" target="_blank" style="font-size:18px; text-decoration:none;">Sadaka Elie</a>
-    <span style="margin: 0 10px;">|</span>
-    <a href="https://github.com/Marxi7" target="_blank" style="font-size:18px; text-decoration:none;">Scuderi Marcello</a>
+<div class="footer" style="margin-top: 50px; line-height:1.4; text-align:center;">
+    <a href="https://www.linkedin.com/in/arina-w/" target="_blank">Wahab Arina</a>
+    <span style="margin: 0 15px;">|</span>
+    <a href="https://www.linkedin.com/in/eliesdk" target="_blank">Sadaka Elie</a>
+    <span style="margin: 0 15px;">|</span>
+    <a href="https://github.com/Marxi7" target="_blank">Scuderi Marcello</a>
 </div>
 """, unsafe_allow_html=True)
